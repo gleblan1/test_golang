@@ -1,22 +1,23 @@
 # Примеры API запросов
 
-## Добавление криптовалюты в отслеживание
+## Добавить Bitcoin
 
-### Запрос
 ```bash
 curl -X POST http://localhost:8080/api/v1/currency/add \
   -H "Content-Type: application/json" \
   -d '{
-    "symbol": "bitcoin",
+    "symbol": "BTC",
+    "api_id": "bitcoin",
     "interval": 60
   }'
 ```
 
-### Ответ
+**Ответ:**
 ```json
 {
   "id": 1,
-  "symbol": "bitcoin",
+  "symbol": "BTC",
+  "api_id": "bitcoin",
   "interval": 60,
   "is_active": true,
   "created_at": "2024-01-01T12:00:00Z",
@@ -24,55 +25,66 @@ curl -X POST http://localhost:8080/api/v1/currency/add \
 }
 ```
 
-## Удаление криптовалюты из отслеживания
+## Добавить Ethereum
 
-### Запрос
 ```bash
-curl -X POST http://localhost:8080/api/v1/currency/remove \
+curl -X POST http://localhost:8080/api/v1/currency/add \
   -H "Content-Type: application/json" \
   -d '{
-    "symbol": "bitcoin"
+    "symbol": "ETH",
+    "api_id": "ethereum",
+    "interval": 60
   }'
 ```
 
-### Ответ
-```json
-{
-  "message": "Currency removed successfully"
-}
-```
+## Добавить Tether
 
-## Получение цены криптовалюты
-
-### Запрос
 ```bash
-curl -X GET "http://localhost:8080/api/v1/currency/price?coin=bitcoin&timestamp=1640995200"
+curl -X POST http://localhost:8080/api/v1/currency/add \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "USDT",
+    "api_id": "tether",
+    "interval": 60
+  }'
 ```
 
-### Ответ
+## Получить цену Bitcoin
+
+```bash
+curl "http://localhost:8080/api/v1/currency/price?coin=BTC&timestamp=$(date +%s)"
+```
+
+**Ответ:**
 ```json
 {
   "id": 1,
-  "symbol": "bitcoin",
-  "price": 50000.00,
-  "timestamp": "2022-01-01T00:00:00Z",
-  "created_at": "2022-01-01T00:00:00Z"
+  "symbol": "BTC",
+  "price": 116388.00,
+  "timestamp": "2024-01-01T12:00:00Z",
+  "created_at": "2024-01-01T12:00:00Z"
 }
 ```
 
-## Получение списка всех активных криптовалют
+## Получить цену Ethereum
 
-### Запрос
 ```bash
-curl -X GET http://localhost:8080/api/v1/currency/list
+curl "http://localhost:8080/api/v1/currency/price?coin=ETH&timestamp=$(date +%s)"
 ```
 
-### Ответ
+## Получить список активных валют
+
+```bash
+curl http://localhost:8080/api/v1/currency/list
+```
+
+**Ответ:**
 ```json
 [
   {
     "id": 1,
-    "symbol": "bitcoin",
+    "symbol": "BTC",
+    "api_id": "bitcoin",
     "interval": 60,
     "is_active": true,
     "created_at": "2024-01-01T12:00:00Z",
@@ -80,162 +92,121 @@ curl -X GET http://localhost:8080/api/v1/currency/list
   },
   {
     "id": 2,
-    "symbol": "ethereum",
-    "interval": 120,
+    "symbol": "ETH",
+    "api_id": "ethereum",
+    "interval": 60,
     "is_active": true,
-    "created_at": "2024-01-01T12:30:00Z",
-    "updated_at": "2024-01-01T12:30:00Z"
+    "created_at": "2024-01-01T12:00:00Z",
+    "updated_at": "2024-01-01T12:00:00Z"
   }
 ]
 ```
 
+## Удалить криптовалюту
+
+```bash
+curl -X POST http://localhost:8080/api/v1/currency/remove \
+  -H "Content-Type: application/json" \
+  -d '{"symbol": "BTC"}'
+```
+
+**Ответ:**
+```json
+{
+  "message": "Currency removed successfully"
+}
+```
+
 ## Проверка здоровья сервиса
 
-### Запрос
 ```bash
-curl -X GET http://localhost:8080/health
+curl http://localhost:8080/health
 ```
 
-### Ответ
+**Ответ:**
 ```json
 {
-  "message": "Service is healthy"
+  "status": "ok",
+  "service": "crypto-price-tracker"
 }
 ```
 
-## Примеры ошибок
-
-### Криптовалюта уже существует
-```bash
-curl -X POST http://localhost:8080/api/v1/currency/add \
-  -H "Content-Type: application/json" \
-  -d '{
-    "symbol": "bitcoin",
-    "interval": 60
-  }'
-```
-
-### Ответ
-```json
-{
-  "error": "currency_error",
-  "message": "currency already exists",
-  "code": 409
-}
-```
-
-### Криптовалюта не найдена
-```bash
-curl -X GET "http://localhost:8080/api/v1/currency/price?coin=nonexistent&timestamp=1640995200"
-```
-
-### Ответ
-```json
-{
-  "error": "price_error",
-  "message": "currency not found",
-  "code": 404
-}
-```
-
-### Неверные параметры
-```bash
-curl -X GET "http://localhost:8080/api/v1/currency/price?coin=bitcoin&timestamp=invalid"
-```
-
-### Ответ
-```json
-{
-  "error": "validation_error",
-  "message": "invalid timestamp format",
-  "code": 400
-}
-```
-
-## Использование с Python
+## Python примеры
 
 ```python
 import requests
-import json
+import time
 
-# Базовый URL
-base_url = "http://localhost:8080/api/v1"
+# Добавить Bitcoin
+response = requests.post('http://localhost:8080/api/v1/currency/add', json={
+    'symbol': 'BTC',
+    'api_id': 'bitcoin',
+    'interval': 60
+})
+print(response.json())
 
-# Добавление криптовалюты
-def add_currency(symbol, interval):
-    url = f"{base_url}/currency/add"
-    data = {
-        "symbol": symbol,
-        "interval": interval
-    }
-    response = requests.post(url, json=data)
-    return response.json()
-
-# Получение цены
-def get_price(coin, timestamp):
-    url = f"{base_url}/currency/price"
-    params = {
-        "coin": coin,
-        "timestamp": timestamp
-    }
-    response = requests.get(url, params=params)
-    return response.json()
-
-# Примеры использования
-if __name__ == "__main__":
-    # Добавляем Bitcoin
-    result = add_currency("bitcoin", 60)
-    print("Added currency:", result)
-    
-    # Получаем цену Bitcoin
-    import time
-    current_timestamp = int(time.time())
-    price = get_price("bitcoin", current_timestamp)
-    print("Current price:", price)
+# Получить цену
+timestamp = int(time.time())
+price_response = requests.get('http://localhost:8080/api/v1/currency/price', params={
+    'coin': 'BTC',
+    'timestamp': timestamp
+})
+print(price_response.json())
 ```
 
-## Использование с JavaScript
+## JavaScript примеры
 
 ```javascript
-// Базовый URL
-const baseUrl = 'http://localhost:8080/api/v1';
+// Добавить Ethereum
+fetch('http://localhost:8080/api/v1/currency/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        symbol: 'ETH',
+        api_id: 'ethereum',
+        interval: 60
+    })
+})
+.then(response => response.json())
+.then(data => console.log(data));
 
-// Добавление криптовалюты
-async function addCurrency(symbol, interval) {
-    const response = await fetch(`${baseUrl}/currency/add`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            symbol: symbol,
-            interval: interval
-        })
-    });
-    return await response.json();
-}
+// Получить цену
+const timestamp = Math.floor(Date.now() / 1000);
+fetch(`http://localhost:8080/api/v1/currency/price?coin=ETH&timestamp=${timestamp}`)
+    .then(response => response.json())
+    .then(data => console.log(data));
+```
 
-// Получение цены
-async function getPrice(coin, timestamp) {
-    const response = await fetch(`${baseUrl}/currency/price?coin=${coin}&timestamp=${timestamp}`);
-    return await response.json();
-}
+## Node.js примеры
 
-// Примеры использования
-async function main() {
+```javascript
+const axios = require('axios');
+
+// Добавить Tether
+async function addCurrency() {
     try {
-        // Добавляем Bitcoin
-        const result = await addCurrency('bitcoin', 60);
-        console.log('Added currency:', result);
-        
-        // Получаем цену Bitcoin
-        const currentTimestamp = Math.floor(Date.now() / 1000);
-        const price = await getPrice('bitcoin', currentTimestamp);
-        console.log('Current price:', price);
+        const response = await axios.post('http://localhost:8080/api/v1/currency/add', {
+            symbol: 'USDT',
+            api_id: 'tether',
+            interval: 60
+        });
+        console.log(response.data);
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error:', error.response.data);
     }
 }
 
-main();
+// Получить цену
+async function getPrice() {
+    try {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const response = await axios.get(`http://localhost:8080/api/v1/currency/price?coin=USDT&timestamp=${timestamp}`);
+        console.log(response.data);
+    } catch (error) {
+        console.error('Error:', error.response.data);
+    }
+}
+
+addCurrency();
+getPrice();
 ``` 

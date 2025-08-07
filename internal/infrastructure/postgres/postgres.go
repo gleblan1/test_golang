@@ -11,7 +11,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Config содержит конфигурацию для подключения к PostgreSQL
 type Config struct {
 	Host     string
 	Port     string
@@ -21,7 +20,6 @@ type Config struct {
 	SSLMode  string
 }
 
-// NewConnection создает новое подключение к PostgreSQL
 func NewConnection(config *Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
@@ -33,7 +31,6 @@ func NewConnection(config *Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Автомиграция моделей
 	if err := db.AutoMigrate(&models.Currency{}, &models.Price{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
@@ -42,7 +39,6 @@ func NewConnection(config *Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-// CloseConnection закрывает подключение к базе данных
 func CloseConnection(db *gorm.DB) error {
 	sqlDB, err := db.DB()
 	if err != nil {

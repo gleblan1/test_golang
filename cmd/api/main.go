@@ -17,31 +17,10 @@ import (
 	"crypto-price-tracker-app/internal/infrastructure/postgres"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 )
 
-// @title Crypto Price Tracker API
-// @version 1.0
-// @description Микросервис для отслеживания цен криптовалют
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name MIT
-// @license.url https://opensource.org/licenses/MIT
-
-// @host localhost:8080
-// @BasePath /
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name Authorization
 func main() {
-	// Инициализируем логгер
 	logger, err := initLogger()
 	if err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
@@ -51,19 +30,36 @@ func main() {
 
 	logger.Info("Starting Crypto Price Tracker API")
 
-	// Загружаем конфигурацию
-	cfg, err := config.Load()
+	cfg, err := config.LoadConfig("configs/config.yaml")
 	if err != nil {
-		logger.Fatal("Failed to load configuration", zap.Error(err))
+		logger.Warn("Failed to load config file, using defaults", zap.Error(err))
+		cfg = &config.Config{
+			Database: config.DatabaseConfig{
+				Host:     "postgres",
+				Port:     5432,
+				User:     "postgres",
+				Password: "password",
+				DBName:   "crypto_tracker",
+				SSLMode:  "disable",
+			},
+			API: config.APIConfig{
+				Port: "8080",
+			},
+			Worker: config.WorkerConfig{
+				Interval: 60,
+			},
+			Logging: config.LoggingConfig{
+				Level: "info",
+			},
+		}
 	}
 
-	// Подключаемся к базе данных
 	db, err := postgres.NewConnection(&postgres.Config{
 		Host:     cfg.Database.Host,
-		Port:     cfg.Database.Port,
+		Port:     fmt.Sprintf("%d", cfg.Database.Port),
 		User:     cfg.Database.User,
 		Password: cfg.Database.Password,
-		DBName:   cfg.Database.Name,
+		DBName:   cfg.Database.DBName,
 		SSLMode:  cfg.Database.SSLMode,
 	})
 	if err != nil {
@@ -71,39 +67,30 @@ func main() {
 	}
 	defer postgres.CloseConnection(db)
 
-	// Инициализируем репозитории
 	currencyRepo := postgres.NewCurrencyRepository(db)
 	priceRepo := postgres.NewPriceRepository(db)
 
-	// Инициализируем внешний API клиент
-	coingeckoClient := coingecko.NewClient(cfg.Worker.CoinGeckoAPIURL)
+	coingeckoClient := coingecko.NewClient("https://api.coingecko.com/api/v3")
 
-	// Инициализируем сервисы
-	currencyService := services.NewCurrencyService(currencyRepo, priceRepo)
-	_ = services.NewPriceService(currencyRepo, priceRepo, coingeckoClient)
+	currencyService := services.NewCurrencyService(currencyRepo, priceRepo, logger)
+	priceService := services.NewPriceService(priceRepo, currencyRepo, coingeckoClient, logger)
 
-	// Инициализируем HTTP handlers
-	currencyHandler := handlers.NewCurrencyHandler(currencyService)
+	handlers := handlers.NewHandlers(currencyService, priceService)
 
-	// Настраиваем Gin
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
-	// Добавляем middleware
-	router.Use(middleware.LoggerMiddleware(logger))
-	router.Use(middleware.RecoveryMiddleware(logger))
+	router.Use(middleware.Logger(logger))
+	router.Use(middleware.Recovery(logger))
 	router.Use(middleware.CORSMiddleware())
 
-	// Настраиваем маршруты
-	setupRoutes(router, currencyHandler)
+	setupRoutes(router, handlers)
 
-	// Создаем HTTP сервер
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%s", cfg.API.Host, cfg.API.Port),
+		Addr:    ":" + cfg.API.Port,
 		Handler: router,
 	}
 
-	// Запускаем сервер в горутине
 	go func() {
 		logger.Info("Starting HTTP server", zap.String("address", server.Addr))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -111,14 +98,12 @@ func main() {
 		}
 	}()
 
-	// Ждем сигнала для graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	logger.Info("Shutting down server...")
 
-	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -129,7 +114,6 @@ func main() {
 	logger.Info("Server exited")
 }
 
-// initLogger инициализирует логгер
 func initLogger() (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
 	config.OutputPaths = []string{"stdout"}
@@ -137,28 +121,22 @@ func initLogger() (*zap.Logger, error) {
 	return config.Build()
 }
 
-// setupRoutes настраивает маршруты API
-func setupRoutes(router *gin.Engine, currencyHandler *handlers.CurrencyHandler) {
-	// API v1
+func setupRoutes(router *gin.Engine, handlers *handlers.Handlers) {
 	v1 := router.Group("/api/v1")
 	{
-		// Currency endpoints
 		currency := v1.Group("/currency")
 		{
-			currency.POST("/add", currencyHandler.AddCurrency)
-			currency.POST("/remove", currencyHandler.RemoveCurrency)
-			currency.GET("/price", currencyHandler.GetPrice)
-			currency.GET("/list", currencyHandler.GetAllCurrencies)
+			currency.POST("/add", handlers.AddCurrency)
+			currency.POST("/remove", handlers.RemoveCurrency)
+			currency.GET("/price", handlers.GetPrice)
+			currency.GET("/list", handlers.GetAllCurrencies)
 		}
 	}
 
-	// Health check
-	router.GET("/health", currencyHandler.HealthCheck)
+	router.GET("/health", handlers.HealthCheck)
 
-	// Swagger documentation
 	router.Static("/docs", "./docs")
 	router.GET("/swagger", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/docs/index.html")
 	})
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }

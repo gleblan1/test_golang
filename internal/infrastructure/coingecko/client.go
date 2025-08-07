@@ -9,13 +9,11 @@ import (
 	"time"
 )
 
-// Client представляет клиент для работы с CoinGecko API
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
 }
 
-// PriceResponse представляет ответ от CoinGecko API
 type PriceResponse struct {
 	ID                           string  `json:"id"`
 	Symbol                       string  `json:"symbol"`
@@ -45,14 +43,12 @@ type PriceResponse struct {
 	LastUpdated                  string  `json:"last_updated"`
 }
 
-// ROI представляет Return on Investment
 type ROI struct {
 	Times      float64 `json:"times"`
 	Currency   string  `json:"currency"`
 	Percentage float64 `json:"percentage"`
 }
 
-// NewClient создает новый клиент для CoinGecko API
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: baseURL,
@@ -62,83 +58,71 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// GetPrice возвращает текущую цену криптовалюты
 func (c *Client) GetPrice(ctx context.Context, symbol string) (float64, error) {
-	// Формируем URL для запроса
 	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd", c.baseURL, symbol)
 
-	// Создаем HTTP запрос
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Выполняем запрос
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Проверяем статус ответа
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return 0, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Читаем тело ответа
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Парсим JSON ответ
 	var priceData map[string]map[string]float64
 	if err := json.Unmarshal(body, &priceData); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	// Извлекаем цену
-	if currencyData, exists := priceData[symbol]; exists {
-		if price, exists := currencyData["usd"]; exists {
-			return price, nil
-		}
+	if priceData[symbol] == nil {
+		return 0, fmt.Errorf("currency %s not found", symbol)
 	}
 
-	return 0, fmt.Errorf("price not found for symbol: %s", symbol)
+	price, exists := priceData[symbol]["usd"]
+	if !exists {
+		return 0, fmt.Errorf("USD price not found for %s", symbol)
+	}
+
+	return price, nil
 }
 
-// GetDetailedPrice возвращает детальную информацию о цене криптовалюты
 func (c *Client) GetDetailedPrice(ctx context.Context, symbol string) (*PriceResponse, error) {
-	// Формируем URL для запроса
 	url := fmt.Sprintf("%s/coins/%s", c.baseURL, symbol)
 
-	// Создаем HTTP запрос
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Выполняем запрос
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Проверяем статус ответа
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Читаем тело ответа
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Парсим JSON ответ
 	var priceResponse PriceResponse
 	if err := json.Unmarshal(body, &priceResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)

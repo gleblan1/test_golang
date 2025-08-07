@@ -11,23 +11,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// PriceRepository реализует интерфейс repository.PriceRepository
 type PriceRepository struct {
 	db *gorm.DB
 }
 
-// NewPriceRepository создает новый экземпляр PriceRepository
 func NewPriceRepository(db *gorm.DB) repository.PriceRepository {
 	return &PriceRepository{db: db}
 }
 
-// Create создает новую запись о цене
-func (r *PriceRepository) Create(ctx context.Context, price *models.Price) error {
-	return r.db.WithContext(ctx).Create(price).Error
+func (r *PriceRepository) Create(ctx context.Context, price interface{}) error {
+	priceModel := price.(*models.Price)
+	return r.db.WithContext(ctx).Create(priceModel).Error
 }
 
-// GetByCurrencyAndTime возвращает цену для криптовалюты в указанное время
-func (r *PriceRepository) GetByCurrencyAndTime(ctx context.Context, currencyID uint, timestamp time.Time) (*models.Price, error) {
+func (r *PriceRepository) GetByCurrencyAndTime(ctx context.Context, currencyID uint, timestamp time.Time) (interface{}, error) {
 	var price models.Price
 	err := r.db.WithContext(ctx).
 		Where("currency_id = ? AND timestamp = ?", currencyID, timestamp).
@@ -41,11 +38,9 @@ func (r *PriceRepository) GetByCurrencyAndTime(ctx context.Context, currencyID u
 	return &price, nil
 }
 
-// GetNearestPrice возвращает ближайшую доступную цену
-func (r *PriceRepository) GetNearestPrice(ctx context.Context, currencyID uint, timestamp time.Time) (*models.Price, error) {
+func (r *PriceRepository) GetNearestPrice(ctx context.Context, currencyID uint, timestamp time.Time) (interface{}, error) {
 	var price models.Price
 
-	// Ищем ближайшую цену до указанного времени
 	err := r.db.WithContext(ctx).
 		Where("currency_id = ? AND timestamp <= ?", currencyID, timestamp).
 		Order("timestamp DESC").
@@ -53,7 +48,6 @@ func (r *PriceRepository) GetNearestPrice(ctx context.Context, currencyID uint, 
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Если нет цен до указанного времени, ищем ближайшую после
 			err = r.db.WithContext(ctx).
 				Where("currency_id = ? AND timestamp >= ?", currencyID, timestamp).
 				Order("timestamp ASC").
@@ -73,8 +67,7 @@ func (r *PriceRepository) GetNearestPrice(ctx context.Context, currencyID uint, 
 	return &price, nil
 }
 
-// GetLatestPrice возвращает последнюю цену для криптовалюты
-func (r *PriceRepository) GetLatestPrice(ctx context.Context, currencyID uint) (*models.Price, error) {
+func (r *PriceRepository) GetLatestPrice(ctx context.Context, currencyID uint) (interface{}, error) {
 	var price models.Price
 	err := r.db.WithContext(ctx).
 		Where("currency_id = ?", currencyID).
@@ -89,12 +82,19 @@ func (r *PriceRepository) GetLatestPrice(ctx context.Context, currencyID uint) (
 	return &price, nil
 }
 
-// GetPriceHistory возвращает историю цен для криптовалюты
-func (r *PriceRepository) GetPriceHistory(ctx context.Context, currencyID uint, from, to time.Time) ([]models.Price, error) {
+func (r *PriceRepository) GetPriceHistory(ctx context.Context, currencyID uint, from, to time.Time) ([]interface{}, error) {
 	var prices []models.Price
 	err := r.db.WithContext(ctx).
 		Where("currency_id = ? AND timestamp BETWEEN ? AND ?", currencyID, from, to).
 		Order("timestamp ASC").
 		Find(&prices).Error
-	return prices, err
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]interface{}, len(prices))
+	for i, price := range prices {
+		result[i] = &price
+	}
+	return result, nil
 }

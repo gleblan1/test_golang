@@ -2,94 +2,92 @@ package services
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"time"
 
 	"crypto-price-tracker-app/internal/domain/models"
 	"crypto-price-tracker-app/internal/domain/repository"
+
+	"go.uber.org/zap"
 )
 
-// PriceService предоставляет бизнес-логику для работы с ценами
 type PriceService struct {
-	currencyRepo repository.CurrencyRepository
 	priceRepo    repository.PriceRepository
-	priceAPI     PriceAPI
+	currencyRepo repository.CurrencyRepository
+	priceAPI     repository.PriceAPI
+	logger       *zap.Logger
 }
 
-// PriceAPI определяет интерфейс для получения цен из внешнего API
-type PriceAPI interface {
-	GetPrice(ctx context.Context, symbol string) (float64, error)
-}
-
-// NewPriceService создает новый экземпляр PriceService
-func NewPriceService(currencyRepo repository.CurrencyRepository, priceRepo repository.PriceRepository, priceAPI PriceAPI) *PriceService {
+func NewPriceService(priceRepo repository.PriceRepository, currencyRepo repository.CurrencyRepository, priceAPI repository.PriceAPI, logger *zap.Logger) *PriceService {
 	return &PriceService{
-		currencyRepo: currencyRepo,
 		priceRepo:    priceRepo,
+		currencyRepo: currencyRepo,
 		priceAPI:     priceAPI,
+		logger:       logger,
 	}
 }
 
-// UpdatePrices обновляет цены для всех активных криптовалют
 func (s *PriceService) UpdatePrices(ctx context.Context) error {
-	// Получаем все активные криптовалюты
 	currencies, err := s.currencyRepo.GetAllActive(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get active currencies: %w", err)
+		s.logger.Error("Failed to get active currencies for price update", zap.Error(err))
+		return err
 	}
 
-	// Обновляем цены для каждой криптовалюты
-	for _, currency := range currencies {
-		if err := s.updateCurrencyPrice(ctx, &currency); err != nil {
-			log.Printf("Failed to update price for %s: %v", currency.Symbol, err)
-			continue
+	s.logger.Info("Starting price update for currencies", zap.Int("count", len(currencies)))
+	for _, currencyInterface := range currencies {
+		currency := currencyInterface.(*models.Currency)
+		if err := s.updateCurrencyPrice(ctx, currency); err != nil {
+			s.logger.Error("Failed to update price for currency", zap.String("symbol", currency.Symbol), zap.Error(err))
+		} else {
+			s.logger.Debug("Price updated successfully", zap.String("symbol", currency.Symbol))
 		}
 	}
 
+	s.logger.Info("Price update completed")
 	return nil
 }
 
-// updateCurrencyPrice обновляет цену для конкретной криптовалюты
 func (s *PriceService) updateCurrencyPrice(ctx context.Context, currency *models.Currency) error {
-	// Получаем текущую цену из внешнего API
-	price, err := s.priceAPI.GetPrice(ctx, currency.Symbol)
+	price, err := s.priceAPI.GetPrice(ctx, currency.ApiID)
 	if err != nil {
-		return fmt.Errorf("failed to get price from API: %w", err)
+		s.logger.Error("Failed to get price from API", zap.String("symbol", currency.Symbol), zap.String("api_id", currency.ApiID), zap.Error(err))
+		return err
 	}
 
-	// Создаем новую запись о цене
-	priceRecord := &models.Price{
+	priceModel := &models.Price{
 		CurrencyID: currency.ID,
 		Price:      price,
 		Timestamp:  time.Now(),
 	}
 
-	// Сохраняем цену в базу данных
-	if err := s.priceRepo.Create(ctx, priceRecord); err != nil {
-		return fmt.Errorf("failed to save price to database: %w", err)
+	if err := s.priceRepo.Create(ctx, priceModel); err != nil {
+		s.logger.Error("Failed to save price to database", zap.String("symbol", currency.Symbol), zap.Float64("price", price), zap.Error(err))
+		return err
 	}
 
-	log.Printf("Updated price for %s: $%.2f", currency.Symbol, price)
+	s.logger.Debug("Price saved successfully", zap.String("symbol", currency.Symbol), zap.Float64("price", price))
 	return nil
 }
 
-// GetLatestPrices возвращает последние цены для всех активных криптовалют
-func (s *PriceService) GetLatestPrices(ctx context.Context) (map[string]float64, error) {
+func (s *PriceService) GetLatestPrices(ctx context.Context) ([]models.Price, error) {
 	currencies, err := s.currencyRepo.GetAllActive(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active currencies: %w", err)
+		s.logger.Error("Failed to get active currencies for latest prices", zap.Error(err))
+		return nil, err
 	}
 
-	prices := make(map[string]float64)
-	for _, currency := range currencies {
-		latestPrice, err := s.priceRepo.GetLatestPrice(ctx, currency.ID)
-		if err != nil {
-			log.Printf("Failed to get latest price for %s: %v", currency.Symbol, err)
+	var prices []models.Price
+	for _, currencyInterface := range currencies {
+		currency := currencyInterface.(*models.Currency)
+		priceInterface, err := s.priceRepo.GetLatestPrice(ctx, currency.ID)
+		if err != nil || priceInterface == nil {
+			s.logger.Debug("No latest price found for currency", zap.String("symbol", currency.Symbol))
 			continue
 		}
-		prices[currency.Symbol] = latestPrice.Price
+		price := priceInterface.(*models.Price)
+		prices = append(prices, *price)
 	}
 
+	s.logger.Debug("Retrieved latest prices", zap.Int("count", len(prices)))
 	return prices, nil
 }

@@ -1,12 +1,13 @@
 package middleware
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-// LoggerMiddleware создает middleware для логирования HTTP запросов
-func LoggerMiddleware(logger *zap.Logger) gin.HandlerFunc {
+func Logger(logger *zap.Logger) gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		logger.Info("HTTP Request",
 			zap.String("method", param.Method),
@@ -21,21 +22,22 @@ func LoggerMiddleware(logger *zap.Logger) gin.HandlerFunc {
 	})
 }
 
-// RecoveryMiddleware создает middleware для восстановления после паники
-func RecoveryMiddleware(logger *zap.Logger) gin.HandlerFunc {
+func Recovery(logger *zap.Logger) gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		if err, ok := recovered.(string); ok {
 			logger.Error("Panic recovered",
 				zap.String("error", err),
-				zap.String("method", c.Request.Method),
 				zap.String("path", c.Request.URL.Path),
+				zap.String("method", c.Request.Method),
 			)
 		}
-		c.AbortWithStatus(500)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_server_error",
+			"message": "Internal server error",
+		})
 	})
 }
 
-// CORSMiddleware создает middleware для CORS
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")

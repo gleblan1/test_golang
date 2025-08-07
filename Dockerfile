@@ -33,6 +33,7 @@ WORKDIR /root/
 
 COPY --from=builder /app/api .
 COPY --from=builder /app/docs ./docs
+COPY --from=builder /app/configs ./configs
 
 EXPOSE 8080
 
@@ -46,5 +47,6 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/worker .
+COPY --from=builder /app/configs ./configs
 
 CMD ["./worker"] 
